@@ -10,7 +10,7 @@ namespace matrix {
 struct Matrix_Diagnosis {
     bool                        has_nulls;
     bool                        is_homogeneous;
-    simdjson::dom::element_type common_element_type;
+    simdjson::ondemand::json_type common_element_type;
     rcpp_T                      common_R_type;
     std::size_t                 n_cols;
 };
@@ -18,23 +18,26 @@ struct Matrix_Diagnosis {
 
 template <Type_Policy type_policy, utils::Int64_R_Type int64_opt>
 inline std::optional<Matrix_Diagnosis>
-diagnose(simdjson::dom::array array) noexcept(RCPPSIMDJSON_NO_EXCEPTIONS) {
+diagnose(simdjson::ondemand::array array) noexcept(RCPPSIMDJSON_NO_EXCEPTIONS) {
     std::unordered_set<std::size_t>     n_cols;
     Type_Doctor<type_policy, int64_opt> matrix_doctor;
 
     for (auto element : array) {
-        simdjson::dom::array sub_array;
+        simdjson::ondemand::array sub_array;
         if(element.get(sub_array) != simdjson::SUCCESS) {
+            array.rewind();
             return std::nullopt;
         }
         matrix_doctor.update(
             Type_Doctor<type_policy, int64_opt>(sub_array));
-        n_cols.insert(std::size(sub_array));
+        n_cols.insert(static_cast<size_t>(sub_array.count_elements()));
 
         if (std::size(n_cols) > 1 || !matrix_doctor.is_vectorizable()) {
+            array.rewind();
             return std::nullopt;
         }
     }
+    array.rewind();
 
     return Matrix_Diagnosis{matrix_doctor.has_null(),
                             matrix_doctor.is_homogeneous(),
@@ -45,30 +48,36 @@ diagnose(simdjson::dom::array array) noexcept(RCPPSIMDJSON_NO_EXCEPTIONS) {
 
 
 template <int RTYPE, typename in_T, rcpp_T R_Type, bool has_nulls>
-inline Rcpp::Vector<RTYPE> build_matrix_typed(simdjson::dom::array array,
+inline Rcpp::Vector<RTYPE> build_matrix_typed(simdjson::ondemand::array array,
                                               const std::size_t    n_cols) {
-    const R_xlen_t      n_rows = std::size(array);
+    const R_xlen_t      n_rows = static_cast<R_xlen_t>(array.count_elements());
     Rcpp::Matrix<RTYPE> out(n_rows, static_cast<R_xlen_t>(n_cols));
     R_xlen_t            j(0L);
 
 #ifdef RCPPSIMDJSON_IS_GCC_7
 
-    for (simdjson::dom::array sub_array : array) {
+    for (simdjson::ondemand::array sub_array : array) {
         R_xlen_t i(0L);
         for (auto element : sub_array) {
-            out[i + j] = get_scalar<in_T, R_Type, has_nulls>(element);
-            i += n_rows;
+            simdjson::ondemand::value val;
+            if (element.get(val) == simdjson::SUCCESS) {
+                out[i + j] = get_scalar<in_T, R_Type, has_nulls>(val);
+                i += n_rows;
+            }
         }
         j++;
     }
 
 #else
 
-    for (simdjson::dom::array sub_array : array) {
+    for (simdjson::ondemand::array sub_array : array) {
         R_xlen_t i(0L);
         for (auto element : sub_array) {
-            out[i + j] = get_scalar<in_T, R_Type, has_nulls>(element);
-            i += n_rows;
+            simdjson::ondemand::value val;
+            if (element.get(val) == simdjson::SUCCESS) {
+                out[i + j] = get_scalar<in_T, R_Type, has_nulls>(val);
+                i += n_rows;
+            }
         }
         j++;
     }
@@ -79,30 +88,36 @@ inline Rcpp::Vector<RTYPE> build_matrix_typed(simdjson::dom::array array,
 }
 
 template <bool has_nulls>
-inline Rcpp::NumericVector build_matrix_integer64_typed(simdjson::dom::array array,
+inline Rcpp::NumericVector build_matrix_integer64_typed(simdjson::ondemand::array array,
                                                         const std::size_t    n_cols) {
-    const auto           n_rows(std::size(array));
+    const auto           n_rows(static_cast<R_xlen_t>(array.count_elements()));
     std::vector<int64_t> stl_vec_int64(n_rows * n_cols);
     std::size_t          j(0ULL);
 
 #ifdef RCPPSIMDJSON_IS_GCC_7
 
-    for (simdjson::dom::array sub_array : array) {
+    for (simdjson::ondemand::array sub_array : array) {
         std::size_t i(0ULL);
         for (auto&& element : sub_array) {
-            stl_vec_int64[i + j] = get_scalar<int64_t, rcpp_T::i64, has_nulls>(element);
-            i += n_rows;
+            simdjson::ondemand::value val;
+            if (element.get(val) == simdjson::SUCCESS) {
+                stl_vec_int64[i + j] = get_scalar<int64_t, rcpp_T::i64, has_nulls>(val);
+                i += n_rows;
+            }
         }
         j++;
     }
 
 #else
 
-    for (simdjson::dom::array sub_array : array) {
+    for (simdjson::ondemand::array sub_array : array) {
         std::size_t i(0ULL);
         for (auto element : sub_array) {
-            stl_vec_int64[i + j] = get_scalar<int64_t, rcpp_T::i64, has_nulls>(element);
-            i += n_rows;
+            simdjson::ondemand::value val;
+            if (element.get(val) == simdjson::SUCCESS) {
+                stl_vec_int64[i + j] = get_scalar<int64_t, rcpp_T::i64, has_nulls>(val);
+                i += n_rows;
+            }
         }
         j++;
     }
@@ -117,70 +132,32 @@ inline Rcpp::NumericVector build_matrix_integer64_typed(simdjson::dom::array arr
 
 
 template <utils::Int64_R_Type int64_opt>
-inline SEXP dispatch_typed(simdjson::dom::array        array,
-                           simdjson::dom::element_type element_type,
+inline SEXP dispatch_typed(simdjson::ondemand::array        array,
+                           simdjson::ondemand::json_type element_type,
                            const rcpp_T                R_Type,
                            const bool                  has_nulls,
                            const std::size_t           n_cols) {
     switch (element_type) {
-        case simdjson::dom::element_type::STRING:
+        case simdjson::ondemand::json_type::string:
             return has_nulls
                        ? build_matrix_typed<STRSXP, std::string, rcpp_T::chr, HAS_NULLS>(array,
                                                                                          n_cols)
                        : build_matrix_typed<STRSXP, std::string, rcpp_T::chr, NO_NULLS>(array,
                                                                                         n_cols);
 
-        case simdjson::dom::element_type::DOUBLE:
+        case simdjson::ondemand::json_type::number:
             return has_nulls
                        ? build_matrix_typed<REALSXP, double, rcpp_T::dbl, HAS_NULLS>(array, n_cols)
                        : build_matrix_typed<REALSXP, double, rcpp_T::dbl, NO_NULLS>(array, n_cols);
 
-        case simdjson::dom::element_type::INT64: {
-            if (R_Type == rcpp_T::i32) {
-                return has_nulls
-                           ? build_matrix_typed<INTSXP, int64_t, rcpp_T::i32, HAS_NULLS>(array,
-                                                                                         n_cols)
-                           : build_matrix_typed<INTSXP, int64_t, rcpp_T::i32, NO_NULLS>(array,
-                                                                                        n_cols);
-            }
-
-            if constexpr (int64_opt == utils::Int64_R_Type::Double) {
-                return has_nulls
-                           ? build_matrix_typed<REALSXP, int64_t, rcpp_T::dbl, HAS_NULLS>(array,
-                                                                                          n_cols)
-                           : build_matrix_typed<REALSXP, int64_t, rcpp_T::dbl, NO_NULLS>(array,
-                                                                                         n_cols);
-            }
-
-            if constexpr (int64_opt == utils::Int64_R_Type::String) {
-                return has_nulls
-                           ? build_matrix_typed<STRSXP, int64_t, rcpp_T::chr, HAS_NULLS>(array,
-                                                                                         n_cols)
-                           : build_matrix_typed<STRSXP, int64_t, rcpp_T::chr, NO_NULLS>(array,
-                                                                                        n_cols);
-            }
-
-            if constexpr (int64_opt == utils::Int64_R_Type::Integer64 ||
-                          int64_opt == utils::Int64_R_Type::Always) {
-                return has_nulls ? build_matrix_integer64_typed<HAS_NULLS>(array, n_cols)
-                                 : build_matrix_integer64_typed<NO_NULLS>(array, n_cols);
-            }
-        }
-
-        case simdjson::dom::element_type::BOOL:
+        case simdjson::ondemand::json_type::boolean:
             return has_nulls
                        ? build_matrix_typed<LGLSXP, bool, rcpp_T::lgl, HAS_NULLS>(array, n_cols)
                        : build_matrix_typed<LGLSXP, bool, rcpp_T::lgl, NO_NULLS>(array, n_cols);
 
-
-        case simdjson::dom::element_type::UINT64:
-            return has_nulls
-                       ? build_matrix_typed<STRSXP, uint64_t, rcpp_T::chr, HAS_NULLS>(array, n_cols)
-                       : build_matrix_typed<STRSXP, uint64_t, rcpp_T::chr, NO_NULLS>(array, n_cols);
-
             // # nocov start
-        case simdjson::dom::element_type::NULL_VALUE:
-            return Rcpp::LogicalVector(std::size(array), NA_LOGICAL);
+        case simdjson::ondemand::json_type::null:
+            return Rcpp::LogicalVector(static_cast<R_xlen_t>(array.count_elements()), NA_LOGICAL);
 
         default:
             return R_NilValue;
@@ -189,28 +166,34 @@ inline SEXP dispatch_typed(simdjson::dom::array        array,
 }
 
 template <int RTYPE>
-inline SEXP build_matrix_mixed(simdjson::dom::array array, std::size_t n_cols) {
-    const R_xlen_t      n_rows(std::size(array));
+inline SEXP build_matrix_mixed(simdjson::ondemand::array array, std::size_t n_cols) {
+    const R_xlen_t      n_rows(static_cast<R_xlen_t>(array.count_elements()));
     Rcpp::Matrix<RTYPE> out(n_rows, static_cast<R_xlen_t>(n_cols));
     R_xlen_t            j(0L);
 
 #ifdef RCPPSIMDJSON_IS_GCC_7
 
-    for (simdjson::dom::array sub_array : array) {
+    for (simdjson::ondemand::array sub_array : array) {
         R_xlen_t i(0L);
         for (auto&& element : sub_array) {
-            out[i + j] = get_scalar_dispatch<RTYPE>(element);
-            i += n_rows;
+            simdjson::ondemand::value val;
+            if (element.get(val) == simdjson::SUCCESS) {
+                out[i + j] = get_scalar_dispatch<RTYPE>(val);
+                i += n_rows;
+            }
         }
         j++;
     }
 
 #else
-    for (simdjson::dom::array sub_array : array) {
+    for (simdjson::ondemand::array sub_array : array) {
         R_xlen_t i(0L);
         for (auto element : sub_array) {
-            out[i + j] = get_scalar_dispatch<RTYPE>(element);
-            i += n_rows;
+            simdjson::ondemand::value val;
+            if (element.get(val) == simdjson::SUCCESS) {
+                out[i + j] = get_scalar_dispatch<RTYPE>(val);
+                i += n_rows;
+            }
         }
         j++;
     }
@@ -220,52 +203,58 @@ inline SEXP build_matrix_mixed(simdjson::dom::array array, std::size_t n_cols) {
 }
 
 
-inline Rcpp::NumericVector build_matrix_integer64_mixed(simdjson::dom::array array,
+inline Rcpp::NumericVector build_matrix_integer64_mixed(simdjson::ondemand::array array,
                                                         std::size_t          n_cols) {
-    const auto           n_rows(std::size(array));
+    const auto           n_rows(static_cast<R_xlen_t>(array.count_elements()));
     std::vector<int64_t> stl_vec_int64(n_rows * n_cols);
     std::size_t          j(0ULL);
 
 #ifdef RCPPSIMDJSON_IS_GCC_7
 
-    for (simdjson::dom::array sub_array : array) {
+    for (simdjson::ondemand::array sub_array : array) {
         std::size_t i(0ULL);
         for (auto&& element : sub_array) {
-            switch (element.type()) {
-                case simdjson::dom::element_type::INT64:
-                    stl_vec_int64[i + j] = get_scalar<int64_t, rcpp_T::i64, NO_NULLS>(element);
-                    break;
+            simdjson::ondemand::value val;
+            if (element.get(val) == simdjson::SUCCESS) {
+                switch (val.type()) {
+                    case simdjson::ondemand::json_type::number:
+                        stl_vec_int64[i + j] = get_scalar<int64_t, rcpp_T::i64, NO_NULLS>(val);
+                        break;
 
-                case simdjson::dom::element_type::BOOL:
-                    stl_vec_int64[i + j] = get_scalar<bool, rcpp_T::i64, NO_NULLS>(element);
-                    break;
+                    case simdjson::ondemand::json_type::boolean:
+                        stl_vec_int64[i + j] = get_scalar<bool, rcpp_T::i64, NO_NULLS>(val);
+                        break;
 
-                default:
-                    stl_vec_int64[i + j] = NA_INTEGER64;
+                    default:
+                        stl_vec_int64[i + j] = NA_INTEGER64;
+                }
+                i += n_rows;
             }
-            i += n_rows;
         }
         j++;
     }
 
 #else
 
-    for (simdjson::dom::array element : array) {
+    for (simdjson::ondemand::array element : array) {
         std::size_t i(0ULL);
         for (auto sub_element : element) {
-            switch (sub_element.type()) {
-                case simdjson::dom::element_type::INT64:
-                    stl_vec_int64[i + j] = get_scalar<int64_t, rcpp_T::i64, NO_NULLS>(sub_element);
-                    break;
+            simdjson::ondemand::value val;
+            if (sub_element.get(val) == simdjson::SUCCESS) {
+                switch (sub_element.type()) {
+                    case simdjson::ondemand::json_type::number:
+                        stl_vec_int64[i + j] = get_scalar<int64_t, rcpp_T::i64, NO_NULLS>(val);
+                        break;
 
-                case simdjson::dom::element_type::BOOL:
-                    stl_vec_int64[i + j] = get_scalar<bool, rcpp_T::i64, NO_NULLS>(sub_element);
-                    break;
+                    case simdjson::ondemand::json_type::boolean:
+                        stl_vec_int64[i + j] = get_scalar<bool, rcpp_T::i64, NO_NULLS>(val);
+                        break;
 
-                default:
-                    stl_vec_int64[i + j] = NA_INTEGER64;
+                    default:
+                        stl_vec_int64[i + j] = NA_INTEGER64;
+                }
+                i += n_rows;
             }
-            i += n_rows;
         }
         j++;
     }
@@ -281,7 +270,7 @@ inline Rcpp::NumericVector build_matrix_integer64_mixed(simdjson::dom::array arr
 
 template <utils::Int64_R_Type int64_opt>
 inline SEXP
-dispatch_mixed(simdjson::dom::array array, const rcpp_T R_Type, const std::size_t n_cols) {
+dispatch_mixed(simdjson::ondemand::array array, const rcpp_T R_Type, const std::size_t n_cols) {
     switch (R_Type) {
         case rcpp_T::chr:
             return build_matrix_mixed<STRSXP>(array, n_cols);
@@ -314,7 +303,7 @@ dispatch_mixed(simdjson::dom::array array, const rcpp_T R_Type, const std::size_
             return build_matrix_mixed<STRSXP>(array, n_cols);
 
         default: {
-            auto out = Rcpp::LogicalMatrix(std::size(array), n_cols);
+            auto out = Rcpp::LogicalMatrix(static_cast<R_xlen_t>(array.count_elements()), n_cols);
             out.fill(NA_LOGICAL);
             return out;
         }

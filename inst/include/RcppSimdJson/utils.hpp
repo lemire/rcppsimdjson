@@ -27,58 +27,6 @@ struct remove_cvref {
 namespace rcppsimdjson {
 namespace utils {
 
-/**
- * The complete type of a JSON value, including double, int and uint for numbers.
- **/
-enum class complete_json_type {
-    // Start at 1 to catch uninitialized / default values more easily
-    array=1, ///< A JSON array   ( [ 1, 2, 3 ... ] )
-    object,  ///< A JSON object  ( { "a": 1, "b" 2, ... } )
-    int64,  ///< A signed JSON integer  ( 1 or -2 or -1235623 ...)
-    uint64, ///< An unsigned JSON integer (1 or 123 or 135234 ...)
-    double, ///< A JSON double (-2.3 or 1.234e2 or 1.0 ...)
-    string,  ///< A JSON string  ( "a" or "hello world\n" ...)
-    boolean, ///< A JSON boolean (true or false)
-    null     ///< A JSON null    (null)
-}
-
-inline complete_json_type get_complete_type(simdjson::ondemand::value value) {
-    using simdjson::ondemand::json_type;
-
-    switch(value.type()) {
-        case json_type::array:
-            return complete_json_type::array;
-        case json_type::object:
-            return complete_json_type::object;
-        case json_type::number:
-            return get_number_type(value);
-        case json_type::string:
-            return complete_json_type::string;
-        case json_type::boolean:
-            return complete_json_type::bolean;
-        case json_type::null:
-            return complete_json_type::null;
-    }
-}
-
-/**
- * Get the type of a JSON number: double, int or uint.
- * Naive implementation. This does two parsings per number. This can be reduced to at most one parsing.
- **/
-inline complete_json_type get_number_type(simdjson::ondemand::value value)) {
-    auto is_uint = value.get_uint64();
-    auto is_int = value.get_int64();
-    if (is_uint.error() == SUCCESS) {
-        return complete_json_type::uint64;
-    }
-    else if (is_int.error() == SUCCESS) {
-        return complete_json_type::int64;
-    }
-    else {
-        return complete_json_type::double;
-    }
-}
-
 // options for returning big-ints
 enum class Int64_R_Type : int {
     Double    = 0,
