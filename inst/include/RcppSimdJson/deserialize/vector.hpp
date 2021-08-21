@@ -10,13 +10,10 @@ namespace vector {
 
 template <int RTYPE, typename in_T, rcpp_T R_Type, bool has_nulls>
 inline Rcpp::Vector<RTYPE> build_vector_typed(simdjson::ondemand::array array) {
-    Rcpp::Vector<RTYPE> out(static_cast<R_xlen_t>(array.count_elements()));
+    Rcpp::Vector<RTYPE> out(array.count_elements());
     R_xlen_t            i(0L);
     for (auto element : array) {
-        simdjson::ondemand::value val;
-        if (element.get(val) == simdjson::SUCCESS) {
-            out[i++] = get_scalar<in_T, R_Type, has_nulls>(val);
-        }
+        out[i++] = get_scalar<in_T, R_Type, has_nulls>(element);
     }
     return out;
 }
@@ -24,13 +21,10 @@ inline Rcpp::Vector<RTYPE> build_vector_typed(simdjson::ondemand::array array) {
 
 template <bool has_nulls>
 inline Rcpp::Vector<REALSXP> build_vector_integer64_typed(simdjson::ondemand::array array) {
-    std::vector<int64_t> stl_vec_int64(static_cast<R_xlen_t>(array.count_elements()));
+    std::vector<int64_t> stl_vec_int64(array.count_elements());
     std::size_t          i(0ULL);
     for (auto element : array) {
-        simdjson::ondemand::value val;
-        if (element.get(val) == simdjson::SUCCESS) {
-            stl_vec_int64[i++] = get_scalar<int64_t, rcpp_T::i64, has_nulls>(val);
-        }
+        stl_vec_int64[i++] = get_scalar<int64_t, rcpp_T::i64, has_nulls>(element);
     }
     return utils::as_integer64(stl_vec_int64);
 }
@@ -81,45 +75,39 @@ inline SEXP dispatch_typed(simdjson::ondemand::array array, const rcpp_T R_Type,
                              : build_vector_typed<STRSXP, uint64_t, rcpp_T::chr, NO_NULLS>(array);
 
         default:                                                      // # nocov
-            return Rcpp::LogicalVector(static_cast<R_xlen_t>(array.count_elements()), NA_LOGICAL); // # nocov
+            return Rcpp::LogicalVector(array.count_elements(), NA_LOGICAL); // # nocov
     }
 }
 
 
 template <int RTYPE>
 inline Rcpp::Vector<RTYPE> build_vector_mixed(simdjson::ondemand::array array) {
-    Rcpp::Vector<RTYPE> out(static_cast<R_xlen_t>(array.count_elements()));
+    Rcpp::Vector<RTYPE> out(array.count_elements());
     R_xlen_t            i(0L);
     for (auto element : array) {
-        simdjson::ondemand::value val;
-        if (element.get(val) == simdjson::SUCCESS) {
-            out[i++] = get_scalar_dispatch<RTYPE>(val);
-        }
+        out[i++] = get_scalar_dispatch<RTYPE>(element);
     }
     return out;
 }
 
 
 inline Rcpp::Vector<REALSXP> build_vector_integer64_mixed(simdjson::ondemand::array array) {
-    std::vector<int64_t> stl_vec_int64(static_cast<R_xlen_t>(array.count_elements()));
+    std::vector<int64_t> stl_vec_int64(array.count_elements());
     std::size_t          i(0ULL);
 
     for (auto element : array) {
-        simdjson::ondemand::value val;
-        if (element.get(val) == simdjson::SUCCESS) {
-            switch (val.type()) {
-                case simdjson::ondemand::json_type::number:
-                    stl_vec_int64[i++] = get_scalar<int64_t, rcpp_T::i64, HAS_NULLS>(val);
-                    break;
+        switch (utils::get_complete_json_type(element)) {
+            case utils::complete_json_type::int64:
+                stl_vec_int64[i++] = get_scalar<int64_t, rcpp_T::i64, HAS_NULLS>(element);
+                break;
 
-                case simdjson::ondemand::json_type::boolean:
-                    stl_vec_int64[i++] = get_scalar<bool, rcpp_T::i64, HAS_NULLS>(val);
-                    break;
+            case utils::complete_json_type::boolean:
+                stl_vec_int64[i++] = get_scalar<bool, rcpp_T::i64, HAS_NULLS>(element);
+                break;
 
-                default:
-                    stl_vec_int64[i++] = NA_INTEGER64;
-                    break;
-            }
+            default:
+                stl_vec_int64[i++] = NA_INTEGER64;
+                break;
         }
     }
 
@@ -162,7 +150,7 @@ inline SEXP dispatch_mixed(simdjson::ondemand::array array, const rcpp_T common_
             return build_vector_mixed<LGLSXP>(array);
 
         default:
-            return Rcpp::LogicalVector(static_cast<R_xlen_t>(array.count_elements()), NA_LOGICAL);
+            return Rcpp::LogicalVector(array.count_elements(), NA_LOGICAL);
             // # nocov end
     }
 }

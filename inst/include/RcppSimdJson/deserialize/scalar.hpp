@@ -121,15 +121,21 @@ inline auto get_scalar_dispatch(simdjson::ondemand::value) noexcept(noxcpt<RTYPE
 
 template <>
 inline auto get_scalar_dispatch<STRSXP>(simdjson::ondemand::value element) noexcept(false) {
-    switch (element.type()) {
-        case simdjson::ondemand::json_type::string:
+    switch (utils::get_complete_json_type(element)) {
+        case utils::complete_json_type::string:
             return get_scalar<std::string, rcpp_T::chr, NO_NULLS>(element);
 
-        case simdjson::ondemand::json_type::number:
+        case utils::complete_json_type::double:
             return get_scalar<double, rcpp_T::chr, NO_NULLS>(element);
 
-        case simdjson::ondemand::json_type::boolean:
+        case utils::complete_json_type::int64:
+            return get_scalar<int64_t, rcpp_T::chr, NO_NULLS>(element);
+
+        case utils::complete_json_type::boolean:
             return get_scalar<bool, rcpp_T::chr, NO_NULLS>(element);
+
+        case utils::complete_json_type::uint64:
+            return get_scalar<uint64_t, rcpp_T::chr, NO_NULLS>(element);
 
         default:
             return Rcpp::String(NA_STRING);
@@ -141,10 +147,13 @@ template <>
 inline auto
 get_scalar_dispatch<REALSXP>(simdjson::ondemand::value element) noexcept(RCPPSIMDJSON_NO_EXCEPTIONS) {
     switch (element.type()) {
-        case simdjson::ondemand::json_type::number:
+        case utils::complete_json_type::double:
             return get_scalar<double, rcpp_T::dbl, NO_NULLS>(element);
 
-        case simdjson::ondemand::json_type::boolean:
+        case utils::complete_json_type::int64:
+            return get_scalar<int64_t, rcpp_T::dbl, NO_NULLS>(element);
+
+        case utils::complete_json_type::boolean:
             return get_scalar<bool, rcpp_T::dbl, NO_NULLS>(element);
 
         default:
@@ -157,10 +166,10 @@ template <>
 inline auto
 get_scalar_dispatch<INTSXP>(simdjson::ondemand::value element) noexcept(RCPPSIMDJSON_NO_EXCEPTIONS) {
     switch (element.type()) {
-        case simdjson::ondemand::json_type::number:
+        case utils::complete_json_type::int64:
             return get_scalar<int64_t, rcpp_T::i32, NO_NULLS>(element);
 
-        case simdjson::ondemand::json_type::boolean:
+        case utils::complete_json_type::boolean:
             return get_scalar<bool, rcpp_T::i32, HAS_NULLS>(element);
 
         default:
@@ -173,7 +182,7 @@ template <>
 inline auto
 get_scalar_dispatch<LGLSXP>(simdjson::ondemand::value element) noexcept(RCPPSIMDJSON_NO_EXCEPTIONS) {
     switch (element.type()) {
-        case simdjson::ondemand::json_type::boolean:
+        case utils::complete_json_type::boolean:
             return get_scalar<bool, rcpp_T::i32, NO_NULLS>(element);
 
         default:

@@ -26,7 +26,7 @@ static inline constexpr int64_t NA_INTEGER64 = LLONG_MIN;
 
 
 /**
- * @brief Typing arguments that decide how a simdjson::dom::element is ultimately returned to R.
+ * @brief Typing arguments that decide how a simdjson::ondemand::value is ultimately returned to R.
  */
 enum class rcpp_T : int {
     array  = 0, /**< recursive: individual elements will decide ultimate R type */
@@ -151,12 +151,12 @@ namespace deserialize {
 
 
 /**
- * @brief Simplify asimdjson::dom::element to an R object.
+ * @brief Simplify asimdjson::ondemand::value to an R object.
  *
  * @note Forward declaration. See inst/include/RcppSimdJson/deserialize/simplify.hpp.
  */
 template <Type_Policy type_policy, utils::Int64_R_Type int64_opt, Simplify_To simplify_to>
-inline auto simplify_element(simdjson::ondemand::value element,
+inline auto simplify_element(simdjson::ondemand::value value,
                              SEXP                   empty_array,
                              SEXP                   empty_object,
                              SEXP                   single_null) -> SEXP;
